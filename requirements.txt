@@ -1,0 +1,27 @@
+# ReviewLens — full dependency set (baseline + transformer/ML stack).
+#
+#   pip install -r requirements.txt
+#
+# For a fast, offline baseline install use requirements-core.txt instead.
+# The packages below are only needed for the fine-tuned transformer models,
+# aspect clustering with embeddings, and SemEval training/evaluation.
+
+-r requirements-core.txt
+
+# ---- Transformer models & training (heavier; downloads model weights) ----
+# torch: the default PyPI wheel is CPU-only on Windows. For NVIDIA GPUs
+# (incl. RTX 50-series / Blackwell, sm_120) install the CUDA build first:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+torch>=2.1                    # backend for transformers / sentence-transformers
+transformers>=4.38            # fine-tuned aspect extraction + aspect-sentiment
+sentencepiece>=0.1.99         # deberta-v3 tokenizer
+accelerate>=0.26              # Trainer backend
+seqeval>=1.2.2                # span-level (BIO) F1 for aspect extraction
+
+# ---- Aspect clustering (embeddings) ----
+sentence-transformers>=2.3    # all-MiniLM-L6-v2 aspect embeddings
+# HDBSCAN comes from scikit-learn>=1.3 (sklearn.cluster.HDBSCAN) — no separate
+# hdbscan package, which needs a C toolchain and often fails to build on Windows.
+
+# ---- Optional alternative aspect extractor ----
+# spacy>=3.7                  # uncomment + `python -m spacy download en_core_web_sm`

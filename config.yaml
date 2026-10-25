@@ -1,0 +1,91 @@
+# ReviewLens configuration.
+# Central place for paths, model names, and pipeline parameters so nothing is
+# hard-coded across modules. Loaded via reviewlens.config.load_config().
+
+project_name: ReviewLens
+
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  data_sample: data/sample/sample_reviews.csv
+  models: models
+
+# Expected column names in an input reviews CSV. The ingester renames source
+# columns to this canonical schema (see reviewlens/data/ingest.py).
+schema:
+  id: review_id
+  text: text
+  rating: rating      # optional (1-5); used for trend analysis
+  date: date          # optional (ISO date); used for trend analysis
+  product: product    # optional; used as a dashboard filter
+
+aspects:
+  # Baseline noun-phrase extractor settings.
+  min_term_length: 3
+  max_term_words: 4          # keep noun phrases up to 4 tokens ("battery life")
+  # baseline    = NLTK noun-phrase chunking (no torch)
+  # crf         = classical CRF sequence labeler — train: python scripts/train_classical.py
+  # transformer = fine-tuned BIO tagger — train it first: python scripts/train_extractor.py
+  extractor: baseline
+  transformer_model_dir: models/aspect-extractor
+  crf_model_path: models/crf-extractor.joblib
+  # Heuristic pronoun anaphora resolution (discourse): an aspect-less sentence
+  # starting with it/they/this... inherits the review's most recent aspect.
+  # Off by default so published benchmark numbers stay reproducible.
+  anaphora: false
+
+sentiment:
+  # VADER compound-score thresholds -> {positive, neutral, negative}.
+  pos_threshold: 0.05
+  neg_threshold: -0.05
+  # baseline = VADER on the aspect's sentence (fast, no torch)
+  # nb       = Multinomial Naive Bayes bag-of-words — train: python scripts/train_classical.py
+  # absa     = transformer cross-encoder, true (sentence, aspect) -> polarity
+  #            needs the ml extras: pip install -e ".[ml]"
+  aspect_model: baseline
+  nb_model_path: models/nb-sentiment.joblib
+  # Which ABSA weights to load when aspect_model = absa:
+  #   pretrained = absa_model_name below (upper bound: its training mix includes
+  #                SemEval-14 train)
+  #   finetuned  = absa_finetuned_dir — our own clean fine-tune; train it first:
+  #                python scripts/train_absa.py
+  absa_checkpoint: pretrained
+  absa_model_name: yangheng/deberta-v3-base-absa-v1.1
+  absa_finetuned_dir: models/absa-classifier
+
+clustering:
+  # normalized = keyword mapping (no downloads) | wordnet = synonym/hyponym
+  # grouping via WordNet (no torch) | kmeans / hdbscan = MiniLM embeddings
+  # clustered into data-discovered themes (needs the ml extras).
+  method: normalized
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  n_clusters: 8              # used when method = kmeans
+  min_cluster_size: 2        # used when method = hdbscan; noise terms keep their own name
+
+summary:
+  top_k_aspects: 8           # how many aspects to feature as "loved" / "hated"
+  min_mentions: 2            # ignore aspects seen fewer times than this
+  quotes_per_aspect: 2
+
+eval:
+  semeval_dir: data/raw/semeval2014
+  results_path: reports/semeval2014_results.json
+  drop_conflict: true        # standard 3-class setup: drop 'conflict' gold labels
+  absa_batch_size: 16
+
+training:
+  # roberta-base rather than deberta-v3-base: deberta-v3's backward pass NaNs
+  # deterministically on transformers 5.6.x + torch 2.11 (CPU and GPU alike;
+  # forward/inference is unaffected), so it cannot be fine-tuned on this stack.
+  # roberta-base trains cleanly and is the documented alternative.
+  base_model: roberta-base
+  seed: 42
+  max_length: 128
+  extractor:                 # BIO token classification -> aspects.transformer_model_dir
+    epochs: 5
+    batch_size: 16
+    learning_rate: 2.0e-5
+  absa:                      # (sentence, aspect) -> polarity -> sentiment.absa_finetuned_dir
+    epochs: 4
+    batch_size: 32
+    learning_rate: 2.0e-5
